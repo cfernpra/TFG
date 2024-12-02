@@ -2,7 +2,7 @@
 #include "geofence.h"
 #include "firebase.h"
 #include "config.h"
-
+#include "esp_sleep.h"
 
 void setup() {
   Serial.begin(115200);
@@ -11,13 +11,13 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
-    Serial.println("Conectando a Wi-Fi...");
+    Serial.println("Connecting to Wi-Fi...");
   }
-  Serial.println("Conexión Wi-Fi establecida");
+  Serial.println("Wi-Fi connected.");
 
   // Inicializar módulos
-  setupGPS();       // GPS
-  setupFirebase();  // Firestore
+  setupGPS();       // GPS initialization
+  setupFirebase();  // Firestore initialization
 }
 
 void loop() {
@@ -28,7 +28,7 @@ void loop() {
 
   // Verificar si el usuario está fuera de la zona segura
   if (isOutsideSafeZone(lat, lon)) {
-    Serial.println("¡Fuera de la zona segura!");
+    Serial.println("Out of the safe zone!");
 
     // Crear timestamp
     String timestamp = String(millis() / 1000);
@@ -39,24 +39,17 @@ void loop() {
     // Enviar alerta con referencia a la ubicación y al usuario
     sendAlertWithReference("/users/usuario1", "/locations/location1", "Out of safe zone", timestamp);
   } else {
-    Serial.println("Dentro de la zona segura.");
+    Serial.println("Inside the safe zone.");
   }
 
   // Guardar datos si no está en casa
   if (!isAtHome(lat, lon)) {
     String timestamp = String(millis() / 1000);
-    storeLocation(lat, lon, timestamp);  // Almacena datos localmente
-    Serial.println("Ubicación almacenada.");
+    storeLocation(lat, lon, timestamp);  // Store data locally
+    Serial.println("Location stored locally.");
   } else {
     // Si está en casa, conectar a Wi-Fi y enviar datos acumulados
-    if (WiFi.status() != WL_CONNECTED) {
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.println("Conectando a Wi-Fi...");
-      }
-      Serial.println("Conectado a Wi-Fi");
-    }
+    reconnectWiFiIfNeeded();
 
     // Enviar datos acumulados al regresar a casa
     enviarDatosAlRegresar();
@@ -65,6 +58,24 @@ void loop() {
   // Leer datos de una ubicación específica con referencias
   getLocationWithReference("location1");
 
-  delay(30000); // Esperar 30 segundos antes de la próxima actualización
+  // Reducir consumo energético si es posible
+  enterDeepSleep();
 }
 
+void reconnectWiFiIfNeeded() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Reconnecting to Wi-Fi...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(1000);
+      Serial.println("Connecting to Wi-Fi...");
+    }
+    Serial.println("Wi-Fi reconnected.");
+  }
+}
+
+void enterDeepSleep() {
+  Serial.println("Entering deep sleep mode...");
+  esp_sleep_enable_timer_wakeup(60000000); // Wake up every 60 seconds
+  esp_deep_sleep_start();
+}
